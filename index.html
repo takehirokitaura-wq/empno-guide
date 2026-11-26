@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>従業員番号発番連携 システムの手引き</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* 設計方針: 左に2つのリスト(固定表示)、右に Power Automate のフロー図。リストを操作すると通った経路が青で点灯する。アクションの左帯は操作対象リストの色(青緑=他部門連携用／橙=候補者管理)。 */
+:root{
+  --bg:#edf0f3; --grid:rgba(16,28,40,.045); --surface:#ffffff; --sunk:#f4f6f8;
+  --ink:#0d1822; --muted:#5a6876; --line:#cfd7de;
+  --dept:#0b8a80; --dept-soft:#dff3f0; --mst:#c05a12; --mst-soft:#fcebdc;
+  --run:#2458d6; --run-soft:#e3ebfd; --halt:#c13932; --halt-soft:#fbe6e4; --yes:#1f7a45; --flash:#fff0a6;
+  --sans:"IBM Plex Sans JP","Hiragino Sans","Yu Gothic",Meiryo,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#080d12; --grid:rgba(160,190,215,.05); --surface:#0f171e; --sunk:#0b1218;
+    --ink:#e3ebf1; --muted:#8495a3; --line:#253340;
+    --dept:#4fd6c6; --dept-soft:#0f2e2c; --mst:#f3a160; --mst-soft:#33230f;
+    --run:#86a9ff; --run-soft:#16264d; --halt:#f2857e; --halt-soft:#3a1c1a; --yes:#6fd198; --flash:#4f4410; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#080d12; --grid:rgba(160,190,215,.05); --surface:#0f171e; --sunk:#0b1218;
+  --ink:#e3ebf1; --muted:#8495a3; --line:#253340;
+  --dept:#4fd6c6; --dept-soft:#0f2e2c; --mst:#f3a160; --mst-soft:#33230f;
+  --run:#86a9ff; --run-soft:#16264d; --halt:#f2857e; --halt-soft:#3a1c1a; --yes:#6fd198; --flash:#4f4410; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:24px 24px;
+  color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.7}
+.wrap{max-width:1120px;margin:0 auto;padding:20px 16px 64px;display:flex;flex-direction:column;gap:16px}
+h1,h2,h3,p{margin:0}
+button,select{font:inherit;color:inherit}
+button{cursor:pointer}
+button:focus-visible,select:focus-visible{outline:2px solid var(--run);outline-offset:2px}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:6px}
+.kick{font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--muted)}
+h1{font-size:21px;font-weight:700}
+.lead{color:var(--muted);max-width:60em;font-size:13.5px}
+.legend{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:4px;height:12px;border-radius:1px;margin-right:6px;vertical-align:-1px}
+
+.main{display:grid;grid-template-columns:372px minmax(0,1fr);gap:14px;align-items:start}
+.side{position:sticky;top:10px;display:flex;flex-direction:column;gap:10px}
+@media (max-width:860px){.main{grid-template-columns:minmax(0,1fr)}.side{position:static}}
+
+.lst{overflow:hidden}
+.lst .hd{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:7px 10px;border-bottom:1px solid var(--line);border-left:4px solid}
+.lst.dept .hd{border-left-color:var(--dept)} .lst.mst .hd{border-left-color:var(--mst)}
+.lst .hd b{font-size:13.5px} .lst .hd span{font-size:11px;color:var(--muted)}
+.tscroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th{font-family:var(--mono);font-size:10px;font-weight:500;color:var(--muted);text-align:left;padding:5px 5px;white-space:nowrap}
+td{padding:4px 5px;border-top:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{padding-left:10px}
+tr.hl td{background:var(--flash)}
+td select{border:1px solid var(--line);background:var(--surface);border-radius:4px;padding:1px 0;font-size:12px;max-width:100%}
+td select.manual{border-color:var(--mst);color:var(--mst);background:var(--mst-soft);font-weight:600}
+.add{margin:8px 10px;border:1px solid var(--line);background:var(--sunk);border-radius:4px;padding:2px 10px;font-size:12px}
+.add:disabled{opacity:.4;cursor:default}
+.side.busy select,.side.busy .add{pointer-events:none;opacity:.5}
+.trace{padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+.trace h3{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;color:var(--muted);font-weight:500}
+#log{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:3px;min-height:330px;font-size:12.5px}
+#log li{display:grid;grid-template-columns:auto 1fr;gap:8px;color:var(--muted)}
+#log li b{font-weight:600;color:var(--ink);white-space:nowrap}
+#log li.now b,#log li.now{color:var(--run)}
+#log li.halt b,#log li.halt{color:var(--halt)}
+#log li.idle{display:block}
+
+.flow{overflow:hidden;min-width:0}
+.tabs{display:flex;border-bottom:1px solid var(--line);background:var(--sunk)}
+.tabs button{flex:1;border:0;background:transparent;padding:9px 12px;text-align:left;border-bottom:2px solid transparent;color:var(--muted);display:flex;flex-direction:column;line-height:1.35}
+.tabs button b{font-size:14px} .tabs button span{font-size:11px}
+.tabs button[aria-selected="true"]{background:var(--surface);color:var(--ink);border-bottom-color:var(--ink)}
+.dg{overflow-x:auto;padding:16px 12px 20px}
+.seq{display:flex;flex-direction:column;align-items:center}
+#dgin{width:max-content;min-width:100%}
+.cn{width:2px;height:14px;background:var(--line);flex:none}
+.act{width:138px;flex:none;border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:5px;background:var(--surface);padding:5px 8px;text-align:left;display:flex;flex-direction:column;line-height:1.35}
+.act .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.05em;color:var(--muted)}
+.act .nm{font-size:12.5px;font-weight:500}
+.act.dept{border-left-color:var(--dept)} .act.mst{border-left-color:var(--mst)}
+.act.cond{background:var(--ink);color:var(--surface);border-color:var(--ink)} .act.cond .k{color:inherit;opacity:.7}
+.act:hover{border-color:var(--ink)}
+.act.done{background:var(--run-soft);border-color:var(--run);color:var(--ink)}
+.act.done .k{color:var(--muted);opacity:1}
+.act.on{background:var(--run);border-color:var(--run);color:#fff;box-shadow:0 0 0 4px var(--run-soft)}
+.act.on .k{color:#fff;opacity:.85}
+.act.halt{background:var(--halt);border-color:var(--halt);color:#fff;box-shadow:0 0 0 4px var(--halt-soft)}
+.act.halt .k{color:#fff;opacity:.85}
+.brs{display:flex;gap:6px;align-items:flex-start}
+.br{border:1px dashed var(--line);border-radius:6px;padding:6px 5px 8px;display:flex;flex-direction:column;align-items:center;min-width:52px}
+.br .bl{font-family:var(--mono);font-size:10.5px;font-weight:600;margin-bottom:6px}
+.br.t .bl{color:var(--yes)} .br.f .bl{color:var(--halt)}
+.br.taken{border:1.5px solid var(--run);background:color-mix(in srgb,var(--run-soft) 45%,transparent)}
+.none{font-size:10.5px;color:var(--muted);padding:2px 0;width:44px;text-align:center;line-height:1.4}
+.loop{border:1px solid var(--line);border-radius:6px;background:var(--sunk);padding:0 6px 8px;display:flex;flex-direction:column;align-items:center}
+.loop .lh{border:0;background:transparent;font-family:var(--mono);font-size:10.5px;color:var(--muted);padding:4px 6px}
+.loop .lh:hover{color:var(--ink);text-decoration:underline}
+.dg.ran .act:not(.done):not(.on):not(.halt){opacity:.4}
+.end{font-family:var(--mono);font-size:10.5px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 12px;background:var(--surface)}
+
+.keys{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.keys div{background:var(--surface);padding:10px 14px;font-size:13px}
+.keys b{display:block;font-size:13.5px}
+.keys span{color:var(--muted)}
+
+/* 吹き出し */
+#tip{position:absolute;z-index:10;width:320px;max-width:calc(100vw - 16px);background:var(--surface);border:1px solid var(--ink);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:9px;box-shadow:0 12px 36px rgba(8,13,18,.22)}
+#tip[hidden]{display:none}
+#tip::before{content:"";position:absolute;width:12px;height:12px;background:var(--surface);border:1px solid var(--ink);transform:rotate(45deg)}
+#tip.r::before{left:-7px;top:18px;border-right:0;border-top:0}
+#tip.l::before{right:-7px;top:18px;border-left:0;border-bottom:0}
+#tip.d::before{top:-7px;left:24px;border-right:0;border-bottom:0}
+#tip .ph{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+#tip h2{font-size:15px;font-weight:700;line-height:1.4}
+#tip .x{border:0;background:transparent;font-size:18px;line-height:1;padding:0 2px;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{font-size:10.5px;border-radius:3px;padding:0 7px;border:1px solid var(--line);color:var(--muted)}
+.chip.dept{border-color:var(--dept);color:var(--dept)} .chip.mst{border-color:var(--mst);color:var(--mst)}
+#tip .role{font-size:13.5px}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:3px 12px;font-size:12.5px;margin:0}
+.kv dt{color:var(--muted)} .kv dd{margin:0;word-break:break-word}
+#tip ol{margin:0;padding-left:1.4em;font-size:12.5px;color:var(--muted)}
+.unk{border-left:3px solid var(--halt);background:var(--halt-soft);padding:5px 9px;font-size:12px;border-radius:0 4px 4px 0}
+.sup{font-size:12px;color:var(--muted)}
+/* まとまり */
+.grp{width:190px;flex:none;border:1.5px solid var(--ink);border-radius:8px;background:var(--surface);padding:7px 10px;text-align:left;display:flex;flex-direction:column;line-height:1.4}
+.grp .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.05em;color:var(--muted)}
+.grp .nm{font-size:13.5px;font-weight:700}
+.grp .ds{font-size:11.5px;color:var(--muted)}
+.grp.done{background:var(--run-soft);border-color:var(--run)}
+.grp.on{background:var(--run);border-color:var(--run);color:#fff;box-shadow:0 0 0 4px var(--run-soft)}
+.grp.on .k,.grp.on .ds{color:#fff;opacity:.9}
+.grp.halt{background:var(--halt);border-color:var(--halt);color:#fff}
+.gbox{border:1.5px solid var(--ink);border-radius:8px;padding:0 6px 8px;display:flex;flex-direction:column;align-items:center;background:var(--surface)}
+.gbox{min-width:158px}
+.gbox .gh{border:0;background:transparent;padding:6px 6px 7px;display:flex;flex-direction:column;align-items:center;line-height:1.35;width:100%}
+.gbox .gh b{font-size:13.5px;font-weight:700}
+.gbox .gh span{font-size:11px;color:var(--muted)}
+.gbox .gh .td{color:var(--ink);font-weight:600;margin-top:3px;border-top:1px dashed var(--line);padding-top:3px;width:100%}
+.lgrid .gbox .gh{align-items:flex-start;text-align:left}
+.lgrid .gbox .gh b{font-size:14px}
+.lgrid .gbox .gh span{font-size:12px}
+.linkbtn{align-self:flex-start;border:1px solid var(--ink);background:var(--surface);border-radius:4px;padding:5px 14px;font-size:12.5px;font-weight:600}
+.gbox .gh:hover b{text-decoration:underline}
+.gbox.done{background:color-mix(in srgb,var(--run-soft) 40%,var(--surface))}
+.gbox.on{box-shadow:0 0 0 3px var(--run-soft)}
+.gbox.done,.gbox.on{border-color:var(--run)}
+.act.cond .qs{font-size:11px;opacity:.85}
+.dg.ran .grp:not(.done):not(.on):not(.halt){opacity:.4}
+.vt{display:flex;gap:0;padding:10px 12px 0}
+.vt button{border:1px solid var(--line);background:var(--surface);padding:3px 12px;font-size:12px;color:var(--muted)}
+.vt button:first-child{border-radius:4px 0 0 4px} .vt button:last-child{border-radius:0 4px 4px 0;border-left:0}
+.vt button[aria-pressed="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.jump{display:flex;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden;align-self:flex-start;flex-wrap:wrap}
+.jump a{background:var(--surface);padding:5px 14px;font-size:12.5px;color:var(--ink);text-decoration:none;font-weight:600}
+.jump a:hover{background:var(--ink);color:var(--surface)}
+.sec{display:flex;flex-direction:column;gap:12px;scroll-margin-top:10px}
+.sec>h2{font-size:18px;font-weight:700;display:flex;align-items:center;gap:12px}
+.sec>h2::after{content:"";flex:1;height:1px;background:var(--line)}
+.sec h3{font-size:14.5px;font-weight:700}
+.note{font-size:12.5px;color:var(--muted);max-width:62em}
+.steps{margin:0;padding:0;list-style:none;display:grid;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden;counter-reset:st}
+.steps li{background:var(--surface);padding:9px 14px 9px 46px;position:relative;counter-increment:st;font-size:13.5px}
+.steps li::before{content:counter(st);position:absolute;left:14px;top:9px;width:22px;height:22px;border-radius:50%;background:var(--ink);color:var(--surface);font-family:var(--mono);font-size:11px;display:grid;place-items:center}
+.steps li span{display:block;color:var(--muted);font-size:12.5px}
+.tbl{overflow-x:auto}
+.tbl table{font-size:13px}
+.tbl th{font-family:var(--sans);font-size:11.5px;padding:7px 10px;background:var(--sunk)}
+.tbl td{padding:7px 10px;white-space:normal;vertical-align:top}
+.tbl td:first-child{white-space:nowrap;font-weight:600}
+.tbl td.m{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.lgrid{display:grid;grid-template-columns:repeat(2,236px);gap:8px;align-items:stretch}
+.lgrid .gbox{width:236px}
+.stgs{display:flex;flex-direction:column;align-items:center}
+.stg{display:flex;flex-direction:column;gap:6px;align-items:flex-start;width:480px;max-width:100%}
+.sl{font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px}
+.sl span{width:20px;height:20px;border-radius:50%;background:var(--ink);color:var(--surface);font-family:var(--mono);font-size:11px;display:grid;place-items:center}
+@media (max-width:640px){.lgrid{grid-template-columns:236px}.stg{width:236px}}
+.lgrid .gbox{min-width:0}
+.tabs button{min-width:0}
+
+.files{display:flex;flex-direction:column;gap:4px;padding:8px 10px 10px}
+.files div{display:flex;justify-content:space-between;gap:8px;font-family:var(--mono);font-size:11.5px;border:1px solid var(--line);border-radius:4px;padding:3px 8px;color:var(--muted)}
+.files div span{font-family:var(--sans);white-space:nowrap}
+.files div.tg{border-color:var(--dept);color:var(--ink);background:var(--dept-soft)}
+.files div.tg span{color:var(--dept);font-weight:700}
+.runbtn{border:0;background:var(--ink);color:var(--surface);border-radius:6px;padding:9px 14px;font-weight:700;font-size:13.5px;text-align:left;display:flex;flex-direction:column;line-height:1.4}
+.runbtn span{font-weight:400;font-size:11.5px;opacity:.8}
+.runbtn:disabled{opacity:.45;cursor:default}
+td.num{font-family:var(--mono);font-weight:600}
+td.new{color:var(--run)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header style="display:flex;flex-direction:column;gap:6px">
+    <span class="kick">SYSTEM MANUAL</span>
+    <h1>従業員番号発番連携 システムの手引き</h1>
+    <p class="lead">入社前入力フォーム（Excel）の内容を、従業員番号を発番する Excel ファイルへ自動で連携するフローです。n 月に実行すると n+2 月のフォームが対象になり（例：11月に実行 → 202701）、同じ人を二重に連携しないように照合してから追加します。追加された行には、Excel 側で従業員番号が自動発番されます。左の「フローを実行」を押すと、右のフロー図で実行経路が点灯します。太枠は目的ごとのまとまり、その中が個々のアクションです。どちらも押すと、横に説明を表示します。</p>
+    <nav class="jump"><a href="#flow">しくみ</a><a href="#change">運用・改修</a></nav>
+    <div class="legend">
+      <span><i style="background:var(--dept)"></i>入社前入力フォームを操作するアクション</span>
+      <span><i style="background:var(--mst)"></i>発番ファイルを操作するアクション</span>
+      <span><i style="background:var(--muted)"></i>変数・条件・データ加工</span>
+      <span><i style="background:var(--run)"></i>実行された経路</span>
+    </div>
+  </header>
+
+  <div class="main" id="flow">
+    <div class="side" id="side">
+      <button class="runbtn" id="runbtn">▶ フローを実行<span>実際は1時間ごとに自動で実行されます</span></button>
+      <div class="box lst dept"><div class="hd"><b>ライブラリ「入社前入力フォーム」</b><span>例：11月に実行する場合</span></div>
+        <div class="files" id="files"></div></div>
+      <div class="box lst dept"><div class="hd"><b>入社前入力フォーム</b><span id="tgl"></span></div>
+        <div class="tscroll"><table id="tl"></table></div><button class="add" id="add">＋ 入社予定者を追加</button></div>
+      <div class="box lst mst"><div class="hd"><b>発番ファイル</b><span>従業員№発番（Excel）</span></div>
+        <div class="tscroll"><table id="tr"></table></div></div>
+      <div class="box trace"><h3>実行ログ</h3><ol id="log"></ol></div>
+    </div>
+    <div class="box flow">
+      <div class="tabs"><button aria-selected="true" style="cursor:default"><b>キャリア採用ATS-従業員番号発番裏システム</b><span>入社前入力フォーム → 発番ファイル</span></button></div>
+      <div class="dg" id="dg"></div>
+    </div>
+  </div>
+
+  <section class="sec" id="change">
+    <h2>運用・改修</h2>
+    <h3>毎月の動き（改修は不要）</h3>
+    <p class="note">対象月は実行のたびに自動で計算されるため、月が変わってもフローの変更は不要です。n 月に実行すると、n+2 月の入社前入力フォームが対象になります（例：11月に実行 → 202701 のフォーム）。</p>
+    <h3>年が変わるとき（改修が必要）</h3>
+    <p class="note">連携先の発番ファイルは暦年ごとに別のファイルです。フローはファイルを名前で指定しているため、年の切り替え時に次の変更を行います。</p>
+    <ol class="steps">
+      <li>新しい年の発番ファイルを用意する<span>テーブル名は「テーブル1」とし、「SearchKey」列を含めて、列の構成を今のファイルと同じにします。</span></li>
+      <li>「表内に存在する行を一覧表示 2」のファイルを、新しい年のファイルに変更する<span>重複の確認に使うアクションです。</span></li>
+      <li>「表に行を追加」のファイルを、新しい年のファイルに変更する<span>変更後、列の設定（59列中44列）が残っているかを確認します。</span></li>
+    </ol>
+    <div class="keys">
+      <div><b>2つのアクションは必ず同時に変える</b><span>「表に行を追加」だけを変えると、重複の確認が前年のファイルを見たままになり、1時間ごとに同じ人が追加されます。</span></div>
+      <div><b>切り替えは、対象月が翌年1月になる前に</b><span>1月入社分を新しい年のファイルに連携する場合、11月の最初の実行より前に切り替えます（11月の対象月が翌年1月のため）。</span></div>
+    </div>
+    <h3>そのほかに変更が必要になる場面</h3>
+    <div class="box tbl"><table>
+      <thead><tr><th>場面</th><th>影響</th><th>確認・変更するアクション</th></tr></thead>
+      <tbody>
+        <tr><td>フォームのファイル名の付け方を変える</td><td>ファイル名に「入社前入力フォーム」と対象月を含み、末尾が「.xlsx」でないと対象になりません。</td><td class="m">条件 2</td></tr>
+        <tr><td>フォームのテーブル名や列名を変える</td><td>テーブル名は「テーブル502」で固定です。氏・名・生年月日などの列名も式で参照しています。</td><td class="m">表内に存在する行を一覧表示／TransferKey／表に行を追加</td></tr>
+        <tr><td>発番ファイルの列を変える</td><td>連携する列と「SearchKey」列を、名前で指定しています。</td><td class="m">表内に存在する行を一覧表示 2／表に行を追加</td></tr>
+        <tr><td>フォームの保存場所を変える</td><td>サイトとライブラリを固定で指定しています。</td><td class="m">ファイルの取得 (プロパティのみ)／表内に存在する行を一覧表示</td></tr>
+        <tr><td>フローの作成者が担当を外れる</td><td>各アクションは作成者のアカウントの接続で動いています。</td><td class="m">SharePoint と Excel の各アクションの接続</td></tr>
+      </tbody></table></div>
+  </section>
+</div>
+<div id="tip" role="dialog" hidden></div>
+<script>
+const $=s=>document.querySelector(s);
+const h=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const LI='入社前入力フォーム',MA='発番ファイル';
+const INFO={
+ trg:{nm:'繰り返し',k:'トリガー',role:'決まった間隔でフローを開始します。',kv:[['実行','1時間ごと'],['フロー上の表示名','Recurrence']]},
+ v1:{nm:'変数を初期化する',k:'変数',role:'連携の対象月を入れる変数を用意します。n 月に実行すると n+2 月が入ります（例：11月に実行 → 202701）。実行のたびに自動で計算されます。',kv:[['名前','TargetYYYYMM'],['タイプ','文字列'],['値','formatDateTime(…)']],unk:'式の中身は設定画面で省略表示されています。'},
+ v2:{nm:'変数を初期化する 2',k:'変数',role:'この回の実行で処理した照合キーを入れておく配列を用意します。',kv:[['名前','KeyArray'],['タイプ','配列'],['値','（空欄）']]},
+ getf:{nm:'ファイルの取得 (プロパティのみ)',k:'SharePoint',side:'dept',role:'ライブラリ「入社前入力フォーム」にあるファイルの一覧を取得します。',kv:[['サイト','入社手続き連絡用サイト'],['ライブラリ名','入社前入力フォーム']]},
+ l1:{nm:'Apply to each',k:'繰り返し',role:'取得したファイルを1つずつ確認します。',unk:'繰り返しの入力は設定画面で未確認です。'},
+ c2:{q:'対象月の入力フォームか',nm:'条件 2',k:'条件',role:'ファイル名から、対象月の入社前入力フォームだけを選びます。',kv:[['条件 1','ファイル名に「入社前入力フォーム」を含む'],['条件 2','ファイル名に TargetYYYYMM を含む'],['条件 3','ファイル名の末尾が「.xlsx」'],['True','フォームを読み込んで連携'],['False','アクションなし']]},
+ rows:{nm:'表内に存在する行を一覧表示',k:'Excel',side:'dept',role:'対象のフォーム（Excel）のテーブルから、入社予定者の行をすべて取得します。',kv:[['ファイル','条件 2 を通過したファイル'],['テーブル','テーブル502'],['DateTime 形式','Serial Number']]},
+ l3:{nm:'Apply to each 3',k:'繰り返し',role:'フォームの行（入社予定者）を1人ずつ処理します。',unk:'繰り返しの入力は設定画面で未確認です。'},
+ dump:{nm:'RowDump',k:'データ加工',role:'行の内容を文字列に変換します。',kv:[['入力','string(…)']],unk:'式の中身と、この結果の使われ方は未確認です。'},
+ tkey:{nm:'TransferKey',k:'データ加工',role:'氏・名・生年月日をつなげて、人を見分けるための文字列を作ります。',kv:[['式',"concat(trim(氏), trim(名), '|', trim(生年月日))"]]},
+ skey:{nm:'SearchKeyGenerated',k:'データ加工',role:'発番ファイルの検索に使う照合キーを作ります。',unk:'式の中身は未確認です。'},
+ c4:{q:'この回で処理済みか',nm:'条件 4',k:'条件',role:'True の場合は何もしません。False の場合に次へ進みます。',kv:[['判定','contains(…)　等しい　true'],['True','アクションなし'],['False','次の条件へ']],unk:'contains(…) の中身は未確認です。'},
+ c:{q:'照合キーが空でないか',nm:'条件',k:'条件',role:'照合キーが作れた行だけを連携の対象にします。',kv:[['判定',"empty(outputs('SearchKeyGenerated'))　等しい　false"],['True','連携の処理へ'],['False','アクションなし']]},
+ addarr:{nm:'配列変数に追加',k:'変数',role:'処理した照合キーを KeyArray に追加します。',kv:[['名前','KeyArray'],['値','SearchKeyGenerated の出力']]},
+ fq:{nm:'FilterQuery SearchKey',k:'データ加工',role:'発番ファイルを検索するための条件文を作ります。',kv:[['式',"concat('SearchKey eq ', 照合キー)"]],sup:"照合キーは「'」で囲み、キーの中の「'」は2つ重ねる形に置き換えています。"},
+ rows2:{nm:'表内に存在する行を一覧表示 2',k:'Excel',side:'mst',role:'発番ファイルから、同じ照合キーの行を検索します。',sup:'ファイルは暦年ごとに変わります。年の切り替え時に「表に行を追加」と同時に変更します。',kv:[['ファイル','従業員№発番 2027年.xlsx（現在の設定）'],['テーブル','テーブル1'],['フィルター クエリ','FilterQuery SearchKey の出力']]},
+ c3:{q:'発番ファイルに未登録か',nm:'条件 3',k:'条件',role:'検索結果が 0 件のときだけ、行を追加します。すでに登録されている人は追加しません。',kv:[['判定',"length(body('表内に存在する行を一覧表示_2')?['value'])　等しい　0"],['True','表に行を追加'],['False','アクションなし']]},
+ addrow:{nm:'表に行を追加',k:'Excel',side:'mst',role:'発番ファイルのテーブルに、入社予定者の行を追加します。追加後、Excel 側で従業員番号が自動発番されます。',sup:'ファイルは暦年ごとに変わります。年の切り替え時に「表内に存在する行を一覧表示 2」と同時に変更します。',kv:[['ファイル','従業員№発番 2027年.xlsx（現在の設定）'],['テーブル','テーブル1'],['設定している列','59列中44列（氏／名／氏（カナ）／名（カナ）／生年月日／入社予定日／職能資格／一般or幹部 ほか）']],unk:'設定画面で確認できたのは先頭の8列です。'}
+};
+const GRP={
+ g1:{nm:'起動',ds:'1時間ごと',role:'1時間ごとにフローを開始します。人の操作は不要です。'},
+ g2:{nm:'準備',ds:'対象月（n+2月）と、重複確認用の入れ物',role:'実行月の2か月後（n+2 月）を対象月として控え、処理済みの照合キーを入れる配列を空で用意します。'},
+ g3:{nm:'フォームの一覧を取得',ds:'ライブラリ内の全ファイル',role:'入社手続き連絡用サイトのライブラリ「入社前入力フォーム」から、ファイルの一覧を取得します。'},
+ g4:{nm:'対象月のフォームを読む',ds:'テーブル502 の全行',role:'対象月のフォームを開き、テーブル502 に入力されている入社予定者の行をすべて取得します。'},
+ g5:{nm:'照合キーを作る',ds:'氏・名・生年月日から作成',role:'1人ずつ、氏・名・生年月日をもとに照合キーを作ります。このキーで、同じ人がすでに連携されているかを見分けます。'},
+ g6:{nm:'処理済みとして記録',ds:'KeyArray に追加',role:'処理した照合キーを配列に追加します。'},
+ g7:{nm:'発番ファイルを検索',ds:'同じ照合キーの行を探す',role:'発番ファイルの SearchKey 列を照合キーで検索し、同じ人がすでに登録されているかを調べます。'},
+ g8:{nm:'発番ファイルに追加',ds:'未登録の人だけ',role:'未登録の入社予定者を、発番ファイルに1行追加します。追加された行には、Excel 側で従業員番号が自動発番されます。'}
+};
+const C=(id,t,f)=>({c:id,t,f}),Lp=(id,b)=>({l:id,b}),G=(id,i)=>({g:id,i});
+const INNER=['dump','tkey','skey','c4','c','addarr','fq','rows2','c3','addrow'];
+const TREE={1:[G('g1',['trg']),G('g2',['v1','v2']),G('g3',['getf']),Lp('l1',[C('c2',
+   [G('g4',['rows']),Lp('l3',[G('g5',['dump','tkey','skey']),C('c4',[],[C('c',[G('g6',['addarr']),G('g7',['fq','rows2']),C('c3',[G('g8',['addrow'])],[])],[])])])],
+   [])])]};
+let cur=1,st={},taken={},running=false;const detail=true;
+const leaves=items=>items.flatMap(it=>typeof it==='string'?[it]:it.l?leaves(it.b):it.g?leaves(it.i):[it.c,...leaves(it.t),...leaves(it.f)]);
+function gstate(it){const ids=leaves(it.i);return ids.some(i=>st[i]==='halt')?'halt':ids.some(i=>st[i]==='on')?'on':ids.some(i=>st[i]==='done')?'done':''}
+function actHTML(id){const n=INFO[id],c=n.k==='条件';return `<button class="act ${n.side||''}${c?' cond':''} ${st[id]||''}" data-id="${id}"><span class="k">${n.k}</span><span class="nm">${h(n.nm)}</span>${c&&n.q?`<span class="qs">${h(n.q)}</span>`:''}</button>`}
+function pieces(items){
+  const out=[];
+  items.forEach(it=>{
+    if(typeof it==='string')out.push(actHTML(it));
+    else if(it.g){const g=GRP[it.g],s=gstate(it);
+      out.push(detail?`<div class="gbox ${s}"><button class="gh" data-id="${it.g}"><b>${h(g.nm)}</b><span>${h(g.ds)}</span>${g.todo?`<span class="td">対応：${h(g.todo)}</span>`:''}</button>${seqHTML(it.i)}</div>`
+        :`<button class="grp ${s}" data-id="${it.g}"><span class="k">アクション ${leaves(it.i).length} 件</span><span class="nm">${h(g.nm)}</span><span class="ds">${h(g.ds)}</span></button>`)}
+    else if(it.l){out.push(`<div class="loop"><button class="lh" data-id="${it.l}">↻ 繰り返し（${h(INFO[it.l].nm)}）</button>${it.stages?stagesHTML(it):seqHTML(it.b)}</div>`)}
+    else{const tk=taken[it.c];
+      out.push(actHTML(it.c)+'<i class="cn"></i><div class="brs">'+
+       `<div class="br t${tk==='T'?' taken':''}"><span class="bl">True</span>${seqHTML(it.t)}</div>`+
+       `<div class="br f${tk==='F'?' taken':''}"><span class="bl">False</span>${seqHTML(it.f)}</div></div>`)}
+  });return out;
+}
+function stagesHTML(it){const p=pieces(it.b);let k=0;return '<div class="stgs">'+it.stages.map(([t,n],i)=>{const part=p.slice(k,k+n);k+=n;return `<div class="stg"><div class="sl"><span>${i+1}</span>${h(t)}</div><div class="lgrid">${part.join('')}</div></div>`}).join('<i class="cn"></i>')+'</div>'}
+function seqHTML(items){const p=pieces(items);return p.length?'<div class="seq">'+p.join('<i class="cn"></i>')+'</div>':'<span class="none">アクションなし</span>'}
+function renderFlow(){
+  const dg=$('#dg');dg.classList.toggle('ran',Object.keys(st).length>0);
+  dg.innerHTML='<div id="dgin">'+seqHTML(TREE[cur])+'<div class="seq"><i class="cn"></i><span class="end">終了</span></div></div>';fit();
+}
+function fit(){const dg=$('#dg'),inn=$('#dgin');if(!inn)return;inn.style.zoom=1;const av=dg.clientWidth-26,w=inn.scrollWidth;inn.style.zoom=w>av?Math.max(.6,av/w):1}
+addEventListener('resize',fit);
+
+/* ---------- 吹き出し ---------- */
+function findGroup(items,gid){for(const it of items){if(typeof it==='string')continue;if(it.g===gid)return it;const r=findGroup(it.g?it.i:it.l?it.b:[...it.t,...it.f],gid);if(r)return r}return null}
+function openTip(id,el){
+  const tip=$('#tip'),g=GRP[id],n=INFO[id];let html;
+  if(g){const names=leaves(findGroup(TREE[cur],id).i).map(i=>INFO[i].nm);
+    html=`<div class="ph"><h2>${h(g.nm)}</h2><button class="x" id="tip-x" aria-label="閉じる">×</button></div>
+     <p class="role">${h(g.role)}</p>${g.todo?`<dl class="kv"><dt>必要な対応</dt><dd>${h(g.todo)}</dd></dl>`:''}<div class="sup">含まれるアクション</div><ol>${names.map(x=>`<li>${h(x)}</li>`).join('')}</ol>${g.unk?`<div class="unk">${h(g.unk)}</div>`:''}`}
+  else if(n){const sc=n.side?`<span class="chip ${n.side}">${n.side==='dept'?LI:MA}を操作</span>`:'';
+    html=`<div class="ph"><h2>${h(n.nm)}</h2><button class="x" id="tip-x" aria-label="閉じる">×</button></div>
+     <div class="chips"><span class="chip">${n.k}</span>${sc}</div><p class="role">${h(n.role)}</p>
+     ${n.kv?'<dl class="kv">'+n.kv.map(([a,b])=>`<dt>${h(a)}</dt><dd>${h(b)}</dd>`).join('')+'</dl>':''}
+     ${n.sup?`<p class="sup">${h(n.sup)}</p>`:''}${n.unk?`<div class="unk">${h(n.unk)}</div>`:''}`}
+  else return;
+  tip.innerHTML=html;tip.hidden=false;tip.className='';
+  const r=el.getBoundingClientRect(),w=tip.offsetWidth,vw=document.documentElement.clientWidth;let left,top=r.top+scrollY-6,cls;
+  if(r.right+14+w<=vw-8){left=r.right+14+scrollX;cls='r'}
+  else if(r.left-14-w>=8){left=r.left-14-w+scrollX;cls='l'}
+  else{left=Math.max(8,Math.min(r.left+scrollX,vw-w-8));top=r.bottom+scrollY+12;cls='d'}
+  tip.className=cls;tip.style.left=left+'px';tip.style.top=top+'px';
+}
+function closeTip(){$('#tip').hidden=true}
+$('#dg').onclick=e=>{const b=e.target.closest('[data-id]');if(b){e.stopPropagation();openTip(b.dataset.id,b)}};
+document.addEventListener('click',e=>{if(e.target.id==='tip-x'||!e.target.closest('#tip'))closeTip()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeTip()});
+
+
+/* ---------- 練習用データ（ダミー） ---------- */
+const T='202701',FN='入社前入力フォーム_202701.xlsx';
+const FILES=[{n:'入社前入力フォーム_202612.xlsx',lb:'n+1月'},{n:FN,tg:true,lb:'n+2月：対象'},{n:'入社手続きのご案内.pdf',lb:''}];
+const FORM=[{n:'山田 太郎',b:'1995/04/12'},{n:'佐藤 花子',b:'1998/09/30'}];
+const OUT=[{n:'山田 太郎',b:'1995/04/12',no:'273311'}];
+const NEW=[{n:'鈴木 一郎',b:'1993/01/25'},{n:'高橋 健',b:'2000/07/08'}];
+let added=0,serial=12,hlL=null,hlR=null,fresh=null;
+let logs=[{idle:true,t:'「フローを実行」を押すと、実行されたアクションがここに順に記録されます。'}];
+const still=matchMedia('(prefers-reduced-motion: reduce)').matches;
+function renderLists(){
+  $('#tgl').textContent='n+2月分（例 202701）';
+  $('#files').innerHTML=FILES.map(f=>`<div class="${f.tg?'tg':''}">${h(f.n)}<span>${h(f.lb)}</span></div>`).join('');
+  $('#tl').innerHTML='<thead><tr><th>氏名</th><th>生年月日</th></tr></thead><tbody>'+FORM.map(r=>`<tr class="${r.n===hlL?'hl':''}"><td>${r.n}</td><td>${r.b}</td></tr>`).join('')+'</tbody>';
+  $('#tr').innerHTML='<thead><tr><th>氏名</th><th>生年月日</th><th>従業員番号</th></tr></thead><tbody>'+OUT.map(r=>`<tr class="${r.n===hlR?'hl':''}"><td>${r.n}</td><td>${r.b}</td><td class="num${r.n===fresh?' new':''}">${r.no}</td></tr>`).join('')+'</tbody>';
+  $('#side').classList.toggle('busy',running);$('#add').disabled=running||added>=NEW.length;$('#runbtn').disabled=running;
+  $('#log').innerHTML=logs.map(l=>l.idle?`<li class="idle">${h(l.t)}</li>`:`<li class="${l.c||''}"><b>${h(l.n)}</b><span>${h(l.t)}</span></li>`).join('');
+}
+function run(seq){
+  st={};taken={};running=true;closeTip();logs=[];let i=0,prev=null;
+  const tick=()=>{
+    if(prev&&st[prev]==='on')st[prev]='done';
+    logs.forEach(l=>{if(l.c==='now')l.c=''});
+    if(i>=seq.length){running=false;hlL=hlR=null;renderLists();renderFlow();return}
+    const s=seq[i++];
+    if(s.clear){INNER.forEach(k=>{delete st[k];delete taken[k]})}
+    st[s.id]='on';prev=s.id;if(s.br)taken[s.id]=s.br;hlL=s.L||null;hlR=s.R||null;if(s.fx)s.fx();
+    if(s.m)logs.push({n:s.n||INFO[s.id].nm,t:s.m,c:'now'});
+    renderLists();renderFlow();
+    const el=document.querySelector('#dg .act.on');if(el)el.scrollIntoView({block:'nearest',inline:'nearest',behavior:still?'auto':'smooth'});
+    setTimeout(tick,s.fast?420:800);
+  };tick();
+}
+$('#runbtn').onclick=()=>{
+  if(running)return;fresh=null;
+  const seq=[
+   {id:'trg',m:'定期実行で起動'},
+   {id:'v1',m:'対象月 ＝ n+2月（例：11月に実行 → 202701）'},
+   {id:'v2',m:'KeyArray を空で用意'},
+   {id:'getf',m:`ライブラリのファイル ${FILES.length} 件を取得`},
+   {id:'c2',m:`「${FN}」だけが条件に一致 → True。ほかのファイルは False`,br:'T'},
+   {id:'rows',m:`テーブル502 から ${FORM.length} 行を取得`}];
+  FORM.forEach(r=>{
+    const hit=OUT.some(o=>o.n===r.n&&o.b===r.b);
+    seq.push({id:'dump',clear:true,fast:true,L:r.n},
+     {id:'tkey',fast:true,L:r.n,n:r.n,m:'氏・名・生年月日から照合キーを作成'},
+     {id:'skey',fast:true,L:r.n},
+     {id:'c4',fast:true,br:'F',L:r.n},
+     {id:'c',fast:true,br:'T',L:r.n},
+     {id:'addarr',fast:true,L:r.n},
+     {id:'fq',fast:true,L:r.n},
+     {id:'rows2',fast:true,L:r.n,R:hit?r.n:null,n:r.n,m:`発番ファイルを検索。一致 ${hit?1:0} 件`});
+    if(hit)seq.push({id:'c3',br:'F',L:r.n,R:r.n,n:r.n,m:'登録済みのため追加しない'});
+    else seq.push({id:'c3',fast:true,br:'T',L:r.n},
+     {id:'addrow',L:r.n,R:r.n,n:r.n,m:'発番ファイルに行を追加。Excel が従業員番号を自動発番',fx:()=>{OUT.push({n:r.n,b:r.b,no:'2733'+(serial++)});fresh=r.n}});
+  });
+  run(seq);
+};
+$('#add').onclick=()=>{if(running||added>=NEW.length)return;const r=NEW[added++];FORM.push(r);hlL=r.n;logs=[{n:'操作',t:`入社前入力フォームに「${r.n}」が入力されました。次の実行で連携されます。`}];renderLists()};
+renderLists();renderFlow();
+</script>
+</body>
+</html>
